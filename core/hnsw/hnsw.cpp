@@ -6,7 +6,7 @@ struct Node
 {
     int id;
     vector<float> data;
-    vector<vector<int>> neighbors;
+    vector<vector<int>> neighbors; // will have to push_back when adding node for beam search later
     bool deleted = false;
 };
 
@@ -62,8 +62,8 @@ class HNSW
 
     vector<pair<float, int>> beamSearch(const vector<float> &query, int currentLayer, int ef, int ep)
     {
-        priority_queue<pair<float,int>, vector<pair<float,int>>, greater<pair<float,int>>> candidates;
-        priority_queue<pair<float,int>> results;
+        priority_queue<pair<float, int>, vector<pair<float, int>>, greater<pair<float, int>>> candidates;
+        priority_queue<pair<float, int>> results;
         unordered_set<int> visited;
 
         float epDist = dist(query, nodes[ep].data);
@@ -76,6 +76,8 @@ class HNSW
             pair<float, int> best = candidates.top();
             float bestCandDist = best.first;
             int bestCandId = best.second;
+
+            candidates.pop();
 
             if (bestCandDist > results.top().first)
                 break;
@@ -95,7 +97,7 @@ class HNSW
                         if (results.size() > ef)
                         {
                             results.pop();
-                        }  
+                        }
                     }
                 }
             }
@@ -112,16 +114,14 @@ class HNSW
         return out;
     }
 
-
-
 public:
     HNSW(int M, int efConstruction)
-    : M(M),
-      efConstruction(efConstruction),
-      maxLayer(0),
-      entryPointId(-1)
+        : M(M),
+          efConstruction(efConstruction),
+          maxLayer(0),
+          entryPointId(-1)
     {
-        nodes.reserve(10000);
+        nodes.reserve(10000); // temporary
     }
 
     void addNode(int id, const vector<float> &data);
