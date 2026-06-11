@@ -15,7 +15,7 @@ class HNSW
     int M;
     int efConstruction;
     int maxLayer;
-    Node entryPoint;
+    int entryPointId;
     vector<Node> nodes;
 
     float dist(const vector<float> &a, const vector<float> &b)
@@ -31,9 +31,9 @@ class HNSW
 
     int greedyDescend(const vector<float> &query, int targetLayer)
     {
-        int currentNodeId = entryPoint.id;
+        int currentNodeId = entryPointId;
         int currentLayer = maxLayer;
-        float bestDist = this->dist(query, entryPoint.data);
+        float bestDist = this->dist(query, nodes[entryPointId].data);
 
         while (currentLayer > targetLayer)
         {
@@ -60,8 +60,69 @@ class HNSW
         return currentNodeId;
     }
 
+    vector<pair<float, int>> beamSearch(const vector<float> &query, int currentLayer, int ef, int ep)
+    {
+        priority_queue<pair<float,int>, vector<pair<float,int>>, greater<pair<float,int>>> candidates;
+        priority_queue<pair<float,int>> results;
+        unordered_set<int> visited;
+
+        float epDist = dist(query, nodes[ep].data);
+        candidates.push({epDist, ep});
+        results.push({epDist, ep});
+        visited.insert(ep);
+
+        while (!candidates.empty())
+        {
+            pair<float, int> best = candidates.top();
+            float bestCandDist = best.first;
+            int bestCandId = best.second;
+
+            if (bestCandDist > results.top().first)
+                break;
+
+            for (int neighborId : nodes[bestCandId].neighbors[currentLayer])
+            {
+                if (visited.find(neighborId) == visited.end())
+                {
+                    visited.insert(neighborId);
+                    float d = dist(query, nodes[neighborId].data);
+
+                    if (results.size() < ef || d < results.top().first)
+                    {
+                        candidates.push({d, neighborId});
+                        results.push({d, neighborId});
+
+                        if (results.size() > ef)
+                        {
+                            results.pop();
+                        }  
+                    }
+                }
+            }
+        }
+
+        vector<pair<float, int>> out;
+        out.reserve(results.size());
+        while (!results.empty())
+        {
+            out.push_back(results.top());
+            results.pop();
+        }
+        reverse(out.begin(), out.end());
+        return out;
+    }
+
+
+
 public:
-    HNSW(int M, int efConstruction);
+    HNSW(int M, int efConstruction)
+    : M(M),
+      efConstruction(efConstruction),
+      maxLayer(0),
+      entryPointId(-1)
+    {
+        nodes.reserve(10000);
+    }
 
     void addNode(int id, const vector<float> &data);
     void deleteNode(int id);
