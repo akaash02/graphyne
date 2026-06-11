@@ -2,129 +2,98 @@
 
 using namespace std;
 
-struct Node
+float HNSW::dist(const vector<float> &a, const vector<float> &b)
 {
-    int id;
-    vector<float> data;
-    vector<vector<int>> neighbors;
-    bool deleted = false;
-};
-
-class HNSW
-{
-    int M;
-    int efConstruction;
-    int maxLayer;
-    int entryPointId;
-    vector<Node> nodes;
-
-    float dist(const vector<float> &a, const vector<float> &b)
+    float sum = 0;
+    for (size_t i = 0; i < a.size(); ++i)
     {
-        float sum = 0;
-        for (size_t i = 0; i < a.size(); ++i)
-        {
-            sum += (a[i] - b[i]) * (a[i] - b[i]);
-        }
-
-        return sum;
+        sum += (a[i] - b[i]) * (a[i] - b[i]);
     }
 
-    int greedyDescend(const vector<float> &query, int targetLayer)
+    return sum;
+}
+
+int HNSW::greedyDescend(const vector<float> &query, int targetLayer)
+{
+    int currentNodeId = entryPointId;
+    int currentLayer = maxLayer;
+    float bestDist = this->dist(query, nodes[entryPointId].data);
+
+    while (currentLayer > targetLayer)
     {
-        int currentNodeId = entryPointId;
-        int currentLayer = maxLayer;
-        float bestDist = this->dist(query, nodes[entryPointId].data);
+        bool changed = false;
 
-        while (currentLayer > targetLayer)
+        for (int neighborId : nodes[currentNodeId].neighbors[currentLayer])
         {
-            bool changed = false;
+            float d = this->dist(query, nodes[neighborId].data);
 
-            for (int neighborId : nodes[currentNodeId].neighbors[currentLayer])
+            if (d < bestDist)
             {
-                float d = this->dist(query, nodes[neighborId].data);
-
-                if (d < bestDist)
-                {
-                    bestDist = d;
-                    currentNodeId = neighborId;
-                    changed = true;
-                }
-            }
-
-            if (!changed)
-            {
-                currentLayer--;
+                bestDist = d;
+                currentNodeId = neighborId;
+                changed = true;
             }
         }
 
-        return currentNodeId;
+        if (!changed)
+        {
+            currentLayer--;
+        }
     }
 
-    vector<pair<float, int>> beamSearch(const vector<float> &query, int currentLayer, int ef, int ep)
+    return currentNodeId;
+}
+
+vector<pair<float, int>> HNSW::beamSearch(const vector<float> &query, int currentLayer, int ef, int ep)
+{
+    priority_queue<pair<float, int>, vector<pair<float, int>>, greater<pair<float, int>>> candidates;
+    priority_queue<pair<float, int>> results;
+    unordered_set<int> visited;
+
+    float epDist = dist(query, nodes[ep].data);
+    candidates.push({epDist, ep});
+    results.push({epDist, ep});
+    visited.insert(ep);
+
+    while (!candidates.empty())
     {
-        priority_queue<pair<float,int>, vector<pair<float,int>>, greater<pair<float,int>>> candidates;
-        priority_queue<pair<float,int>> results;
-        unordered_set<int> visited;
+        pair<float, int> best = candidates.top();
+        float bestCandDist = best.first;
+        int bestCandId = best.second;
 
-        float epDist = dist(query, nodes[ep].data);
-        candidates.push({epDist, ep});
-        results.push({epDist, ep});
-        visited.insert(ep);
+        candidates.pop();
 
-        while (!candidates.empty())
+        if (bestCandDist > results.top().first)
+            break;
+
+        for (int neighborId : nodes[bestCandId].neighbors[currentLayer])
         {
-            pair<float, int> best = candidates.top();
-            float bestCandDist = best.first;
-            int bestCandId = best.second;
-
-            if (bestCandDist > results.top().first)
-                break;
-
-            for (int neighborId : nodes[bestCandId].neighbors[currentLayer])
+            if (visited.find(neighborId) == visited.end())
             {
-                if (visited.find(neighborId) == visited.end())
-                {
-                    visited.insert(neighborId);
-                    float d = dist(query, nodes[neighborId].data);
+                visited.insert(neighborId);
+                float d = dist(query, nodes[neighborId].data);
 
-                    if (results.size() < ef || d < results.top().first)
+                if (results.size() < ef || d < results.top().first)
+                {
+                    candidates.push({d, neighborId});
+                    results.push({d, neighborId});
+
+                    if (results.size() > ef)
                     {
-                        candidates.push({d, neighborId});
-                        results.push({d, neighborId});
-
-                        if (results.size() > ef)
-                        {
-                            results.pop();
-                        }  
+                        results.pop();
                     }
                 }
             }
         }
-
-        vector<pair<float, int>> out;
-        out.reserve(results.size());
-        while (!results.empty())
-        {
-            out.push_back(results.top());
-            results.pop();
-        }
-        reverse(out.begin(), out.end());
-        return out;
     }
 
-
-
-public:
-    HNSW(int M, int efConstruction)
-    : M(M),
-      efConstruction(efConstruction),
-      maxLayer(0),
-      entryPointId(-1)
+    vector<pair<float, int>> out;
+    out.reserve(results.size());
+    while (!results.empty())
     {
-        nodes.reserve(10000);
+        out.push_back(results.top());
+        results.pop();
     }
-
-    void addNode(int id, const vector<float> &data);
-    void deleteNode(int id);
-    vector<int> searchANN(const vector<float> &query, int k, int ef);
-};
+    reverse(out.begin(), out.end());
+    return out;
+}
