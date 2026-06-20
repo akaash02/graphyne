@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <functional>
 #include <cstddef>
+#include <random>
 
 struct Node
 {
@@ -40,6 +41,7 @@ public:
         nodes.reserve(10000); // temporary
     }
 
+    int sampleLayer();
     void addNode(int id, const vector<float> &data);
     void deleteNode(int id);
     std::vector<int> searchANN(const vector<float> &query, int k, int ef);

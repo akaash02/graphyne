@@ -2,6 +2,15 @@
 
 using namespace std;
 
+int HNSW::sampleLayer()
+{
+    random_device rd;
+    mt19937 rng(rd());
+    uniform_real_distribution<float> dist(0.0f, 1.0f);
+    float r = dist(rng);
+    return (int)floor(-log(r) * (1.0f / log(M)));
+}
+
 float HNSW::dist(const vector<float> &a, const vector<float> &b)
 {
     float sum = 0;
@@ -96,4 +105,8 @@ vector<pair<float, int>> HNSW::beamSearch(const vector<float> &query, int curren
     }
     reverse(out.begin(), out.end());
     return out;
+}
+
+void HNSW::addNode(int id, const vector<float> &data)
+{
 }
