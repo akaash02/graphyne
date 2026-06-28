@@ -10,3 +10,6 @@ build/
 # OS
 Thumbs.db
 .DS_Store
+
+# Claude Code context (local only)
+CLAUDE.md
