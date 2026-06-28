@@ -98,24 +98,31 @@ int HNSW::greedyDescend(const vector<float> &query, int targetLayer)
 
     while (currentLayer > targetLayer)
     {
-        bool changed = false;
+        bool changed = true;
 
-        for (int neighborId : nodes[currentNodeId].neighbors[currentLayer])
+        // Stay on this layer, hopping to the closest improving neighbor each time,
+        // until no neighbor of the current node beats it. Then drop one layer.
+        while (changed)
         {
-            float d = this->dist(query, nodes[neighborId].data);
+            changed = false;
+            int bestId = currentNodeId;
 
-            if (d < bestDist)
+            for (int neighborId : nodes[currentNodeId].neighbors[currentLayer])
             {
-                bestDist = d;
-                currentNodeId = neighborId;
-                changed = true;
+                float d = this->dist(query, nodes[neighborId].data);
+
+                if (d < bestDist)
+                {
+                    bestDist = d;
+                    bestId = neighborId;
+                    changed = true;
+                }
             }
+
+            currentNodeId = bestId;
         }
 
-        if (!changed)
-        {
-            currentLayer--;
-        }
+        currentLayer--;
     }
 
     return currentNodeId;
