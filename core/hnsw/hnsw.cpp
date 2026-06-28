@@ -22,9 +22,6 @@ float HNSW::dist(const vector<float> &a, const vector<float> &b)
     return sum;
 }
 
-// Diversity heuristic (Malkov & Yashunin, Algorithm 4): pick up to maxConnections
-// neighbors, accepting a candidate only if it is closer to the query than to any
-// already-selected neighbor. Spreads edges across space instead of clustering.
 vector<pair<float, int>> HNSW::selectNeighbors(const vector<float> &query, vector<pair<float, int>> candidates, int maxConnections)
 {
     sort(candidates.begin(), candidates.end()); // nearest first
@@ -57,9 +54,6 @@ vector<pair<float, int>> HNSW::selectNeighbors(const vector<float> &query, vecto
     return selected;
 }
 
-// Wire the already-inserted node (newId) to each selected neighbor bidirectionally,
-// then prune any neighbor that now exceeds its connection cap using the heuristic.
-// Assumes nodes[newId] already exists in `nodes`, so no resize happens here.
 void HNSW::wireNeighbors(int newId, vector<pair<float, int>> &selected, int currentLayer)
 {
     int maxConnections = (currentLayer == 0) ? 2 * M : M;
@@ -100,8 +94,6 @@ int HNSW::greedyDescend(const vector<float> &query, int targetLayer)
     {
         bool changed = true;
 
-        // Stay on this layer, hopping to the closest improving neighbor each time,
-        // until no neighbor of the current node beats it. Then drop one layer.
         while (changed)
         {
             changed = false;
@@ -189,11 +181,9 @@ void HNSW::addNode(const vector<float> &data)
 
     Node node{.id = newId, .data = data};
     node.neighbors.resize(assignedLayer + 1);
-    // Insert the node up front so wiring can mutate its lists in place via nodes[newId].
-    // nodes.reserve(10000) keeps this push_back from reallocating during typical builds.
     nodes.push_back(std::move(node));
 
-    // First node bootstraps the index: it becomes the entry point with no edges.
+    // First node added to the graph becomes the entry point and sets the max layer.
     if (entryPointId == -1)
     {
         entryPointId = newId;
@@ -203,15 +193,13 @@ void HNSW::addNode(const vector<float> &data)
 
     int ep = entryPointId;
 
-    // Phase A: greedily descend the upper layers (ef=1, no wiring) down to the
-    // node's assigned layer, carrying the closest node found as the entry point.
+    // Find correct layer
     if (assignedLayer < maxLayer)
     {
         ep = greedyDescend(data, assignedLayer);
     }
 
-    // Phase B: from the highest layer the node shares with the graph down to layer 0,
-    // beam-search, pick diverse neighbors, and wire them bidirectionally.
+    // Wire neighbors from correct layer to layer 0
     int startLayer = std::min(assignedLayer, maxLayer);
     for (int layer = startLayer; layer >= 0; layer--)
     {
@@ -231,4 +219,31 @@ void HNSW::addNode(const vector<float> &data)
         entryPointId = newId;
         maxLayer = assignedLayer;
     }
+}
+
+vector<int> HNSW::searchANN(const vector<float> &query, int k, int ef)
+{
+    if (entryPointId == -1)
+        return {};
+
+    // Phase A: greedily descend the upper layers down to layer 1 (queries have no
+    // assigned layer, so we navigate as far down the highways as we can before beaming).
+    int ep = greedyDescend(query, 1);
+
+    // Phase B: one beam search at layer 0 with the query-time ef (must be >= k).
+    vector<pair<float, int>> candidates = beamSearch(query, 0, ef, ep);
+
+    // Return up to k nearest, skipping tombstoned nodes (they aid navigation but
+    // must not appear in results). candidates is sorted nearest-first.
+    vector<int> results;
+    results.reserve(k);
+    for (const auto &[d, id] : candidates)
+    {
+        if (nodes[id].deleted)
+            continue;
+        results.push_back(id);
+        if ((int)results.size() == k)
+            break;
+    }
+    return results;
 }
