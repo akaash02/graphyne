@@ -3,6 +3,10 @@ build/
 
 # Datasets
 *.hdf5
+data/
+
+# Binaries
+bin/
 
 # VSCode
 .vscode/
