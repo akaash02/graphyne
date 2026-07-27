@@ -1,0 +1,19 @@
+# Build
+build/
+
+# Datasets
+*.hdf5
+data/
+
+# Binaries
+bin/
+
+# VSCode
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude Code context (local only)
+CLAUDE.md
