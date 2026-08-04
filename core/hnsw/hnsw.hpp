@@ -3,10 +3,10 @@
 #include <vector>
 #include <utility>
 #include <queue>
-#include <unordered_set>
 #include <algorithm>
 #include <functional>
 #include <cstddef>
+#include <cstdint>
 #include <cmath>
 #include <random>
 #include <limits>
@@ -28,6 +28,12 @@ class HNSW
     std::vector<int> nodeLayer_;   // assigned layer per node
     std::vector<uint8_t> deleted_; // soft-delete flag per node
 
+    std::vector<uint32_t> visited_table_; // generation stamp per node
+    uint32_t visited_gen_;
+
+    std::vector<std::pair<float, int>> beamCandidates_; // min-heap scratch, reused across calls
+    std::vector<std::pair<float, int>> beamResults_;    // max-heap scratch, reused across calls
+
     int sampleLayer();
 
     float dist(const float *a, const float *b);
@@ -36,7 +42,7 @@ class HNSW
 
     int greedyDescend(const float *query, int targetLayer);
 
-    std::vector<std::pair<float, int>> beamSearch(const float *query, int currentLayer, int ef, int ep);
+    const std::vector<std::pair<float, int>> &beamSearch(const float *query, int currentLayer, int ef, int ep);
 
     std::vector<std::pair<float, int>> selectNeighbors(const float *query, std::vector<std::pair<float, int>> candidates, int maxConnections);
 
@@ -53,8 +59,12 @@ public:
           nodeBuffer(n_nodes, dim),
           neighborStore(n_nodes, M, maxLayersCap - 1),
           nodeLayer_(n_nodes, 0),
-          deleted_(n_nodes, 0)
+          deleted_(n_nodes, 0),
+          visited_table_(n_nodes, 0),
+          visited_gen_(0)
     {
+        beamCandidates_.reserve((size_t)efConstruction * 2 * M);
+        beamResults_.reserve((size_t)efConstruction + 1);
     }
 
     float *node_data() { return nodeBuffer.data(); }

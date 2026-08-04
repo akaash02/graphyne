@@ -156,23 +156,32 @@ int HNSW::greedyDescend(const float *query, int targetLayer)
     return currentNodeId;
 }
 
-vector<pair<float, int>> HNSW::beamSearch(const float *query, int currentLayer, int ef, int ep)
+const vector<pair<float, int>> &HNSW::beamSearch(const float *query, int currentLayer, int ef, int ep)
 {
-    priority_queue<pair<float, int>, vector<pair<float, int>>, greater<pair<float, int>>> candidates;
-    priority_queue<pair<float, int>> results;
-    unordered_set<int> visited;
+    const greater<pair<float, int>> minHeap;
+
+    beamCandidates_.clear();
+    beamResults_.clear();
+
+    ++visited_gen_;
+    if (visited_gen_ == 0)
+    {
+        ++visited_gen_;
+        fill(visited_table_.begin(), visited_table_.end(), 0);
+    }
 
     float epDist = dist_avx2(query, nodeBuffer.row(ep));
-    candidates.push({epDist, ep});
-    results.push({epDist, ep});
-    visited.insert(ep);
+    beamCandidates_.push_back({epDist, ep});
+    beamResults_.push_back({epDist, ep});
+    visited_table_[ep] = visited_gen_;
 
-    while (!candidates.empty())
+    while (!beamCandidates_.empty())
     {
-        auto [bestCandDist, bestCandId] = candidates.top();
-        candidates.pop();
+        auto [bestCandDist, bestCandId] = beamCandidates_.front();
+        pop_heap(beamCandidates_.begin(), beamCandidates_.end(), minHeap);
+        beamCandidates_.pop_back();
 
-        if (bestCandDist > results.top().first)
+        if (bestCandDist > beamResults_.front().first)
             break;
 
         int cnt = neighborStore.count(bestCandId, currentLayer);
@@ -180,32 +189,31 @@ vector<pair<float, int>> HNSW::beamSearch(const float *query, int currentLayer, 
         for (int i = 0; i < cnt; ++i)
         {
             int neighborId = row[i];
-            if (visited.find(neighborId) == visited.end())
+            if (visited_table_[neighborId] != visited_gen_)
             {
-                visited.insert(neighborId);
+                visited_table_[neighborId] = visited_gen_;
                 float d = dist_avx2(query, nodeBuffer.row(neighborId));
 
-                if ((int)results.size() < ef || d < results.top().first)
+                if ((int)beamResults_.size() < ef || d < beamResults_.front().first)
                 {
-                    candidates.push({d, neighborId});
-                    results.push({d, neighborId});
+                    beamCandidates_.push_back({d, neighborId});
+                    push_heap(beamCandidates_.begin(), beamCandidates_.end(), minHeap);
 
-                    if ((int)results.size() > ef)
-                        results.pop();
+                    beamResults_.push_back({d, neighborId});
+                    push_heap(beamResults_.begin(), beamResults_.end());
+
+                    if ((int)beamResults_.size() > ef)
+                    {
+                        pop_heap(beamResults_.begin(), beamResults_.end());
+                        beamResults_.pop_back();
+                    }
                 }
             }
         }
     }
 
-    vector<pair<float, int>> out;
-    out.reserve(results.size());
-    while (!results.empty())
-    {
-        out.push_back(results.top());
-        results.pop();
-    }
-    reverse(out.begin(), out.end());
-    return out;
+    sort_heap(beamResults_.begin(), beamResults_.end());
+    return beamResults_;
 }
 
 void HNSW::addNode(int newId)
@@ -228,12 +236,12 @@ void HNSW::addNode(int newId)
     int startLayer = min(assignedLayer, maxLayer);
     for (int layer = startLayer; layer >= 0; layer--)
     {
-        vector<pair<float, int>> candidates = beamSearch(nodeBuffer.row(newId), layer, efConstruction, ep);
+        const vector<pair<float, int>> &candidates = beamSearch(nodeBuffer.row(newId), layer, efConstruction, ep);
         assert(!candidates.empty());
         ep = candidates[0].second;
 
         int maxConnections = (layer == 0) ? 2 * M : M;
-        vector<pair<float, int>> selected = selectNeighbors(nodeBuffer.row(newId), std::move(candidates), maxConnections);
+        vector<pair<float, int>> selected = selectNeighbors(nodeBuffer.row(newId), candidates, maxConnections);
 
         wireNeighbors(newId, selected, layer);
     }
@@ -295,7 +303,7 @@ vector<int> HNSW::searchANN(const vector<float> &query, int k, int ef)
 
     int ep = greedyDescend(query.data(), 1);
 
-    vector<pair<float, int>> candidates = beamSearch(query.data(), 0, ef, ep);
+    const vector<pair<float, int>> &candidates = beamSearch(query.data(), 0, ef, ep);
 
     vector<int> results;
     results.reserve(k);
