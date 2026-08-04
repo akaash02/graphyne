@@ -1,5 +1,6 @@
 #include "hnsw.hpp"
 #include <cassert>
+#include <immintrin.h>
 
 using namespace std;
 
@@ -21,6 +22,34 @@ float HNSW::dist(const float *a, const float *b)
     return sum;
 }
 
+float HNSW::dist_avx2(const float *__restrict__ a, const float *__restrict__ b)
+{
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
+
+    for (size_t i = 0; i < 128; i += 32)
+    {
+        __m256 d0 = _mm256_sub_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i));
+        __m256 d1 = _mm256_sub_ps(_mm256_loadu_ps(a + i + 8), _mm256_loadu_ps(b + i + 8));
+        __m256 d2 = _mm256_sub_ps(_mm256_loadu_ps(a + i + 16), _mm256_loadu_ps(b + i + 16));
+        __m256 d3 = _mm256_sub_ps(_mm256_loadu_ps(a + i + 24), _mm256_loadu_ps(b + i + 24));
+
+        acc0 = _mm256_fmadd_ps(d0, d0, acc0);
+        acc1 = _mm256_fmadd_ps(d1, d1, acc1);
+        acc2 = _mm256_fmadd_ps(d2, d2, acc2);
+        acc3 = _mm256_fmadd_ps(d3, d3, acc3);
+    }
+
+    __m256 acc = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
+
+    __m128 s = _mm_add_ps(_mm256_castps256_ps128(acc), _mm256_extractf128_ps(acc, 1));
+    s = _mm_add_ps(s, _mm_movehl_ps(s, s));
+    s = _mm_add_ss(s, _mm_shuffle_ps(s, s, 0x1));
+    return _mm_cvtss_f32(s);
+}
+
 vector<pair<float, int>> HNSW::selectNeighbors(const float *query, vector<pair<float, int>> candidates, int maxConnections)
 {
     sort(candidates.begin(), candidates.end());
@@ -38,7 +67,7 @@ vector<pair<float, int>> HNSW::selectNeighbors(const float *query, vector<pair<f
 
         for (const auto &s : selected)
         {
-            float distToSelected = dist(nodeBuffer.row(cand.second), nodeBuffer.row(s.second));
+            float distToSelected = dist_avx2(nodeBuffer.row(cand.second), nodeBuffer.row(s.second));
             if (distToSelected < distToQuery)
             {
                 keep = false;
@@ -73,7 +102,7 @@ void HNSW::wireNeighbors(int newId, vector<pair<float, int>> &selected, int curr
             vector<pair<float, int>> candidates;
             candidates.reserve(cnt + 1);
             for (int i = 0; i < cnt; ++i)
-                candidates.push_back({dist(nodeBuffer.row(neighborId), nodeBuffer.row(row[i])), row[i]});
+                candidates.push_back({dist_avx2(nodeBuffer.row(neighborId), nodeBuffer.row(row[i])), row[i]});
             candidates.push_back({d, newId});
 
             vector<pair<float, int>> kept = selectNeighbors(nodeBuffer.row(neighborId), std::move(candidates), maxConnections);
@@ -96,7 +125,7 @@ int HNSW::greedyDescend(const float *query, int targetLayer)
 {
     int currentNodeId = entryPointId;
     int currentLayer = maxLayer;
-    float bestDist = this->dist(query, nodeBuffer.row(entryPointId));
+    float bestDist = dist_avx2(query, nodeBuffer.row(entryPointId));
 
     while (currentLayer > targetLayer)
     {
@@ -110,7 +139,7 @@ int HNSW::greedyDescend(const float *query, int targetLayer)
             const int *row = neighborStore.neighbors(currentNodeId, currentLayer);
             for (int i = 0; i < cnt; ++i)
             {
-                float d = this->dist(query, nodeBuffer.row(row[i]));
+                float d = dist_avx2(query, nodeBuffer.row(row[i]));
                 if (d < bestDist)
                 {
                     bestDist = d;
@@ -133,7 +162,7 @@ vector<pair<float, int>> HNSW::beamSearch(const float *query, int currentLayer, 
     priority_queue<pair<float, int>> results;
     unordered_set<int> visited;
 
-    float epDist = dist(query, nodeBuffer.row(ep));
+    float epDist = dist_avx2(query, nodeBuffer.row(ep));
     candidates.push({epDist, ep});
     results.push({epDist, ep});
     visited.insert(ep);
@@ -154,7 +183,7 @@ vector<pair<float, int>> HNSW::beamSearch(const float *query, int currentLayer, 
             if (visited.find(neighborId) == visited.end())
             {
                 visited.insert(neighborId);
-                float d = dist(query, nodeBuffer.row(neighborId));
+                float d = dist_avx2(query, nodeBuffer.row(neighborId));
 
                 if ((int)results.size() < ef || d < results.top().first)
                 {

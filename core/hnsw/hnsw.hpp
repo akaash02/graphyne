@@ -32,6 +32,8 @@ class HNSW
 
     float dist(const float *a, const float *b);
 
+    static float dist_avx2(const float *__restrict__ a, const float *__restrict__ b);
+
     int greedyDescend(const float *query, int targetLayer);
 
     std::vector<std::pair<float, int>> beamSearch(const float *query, int currentLayer, int ef, int ep);
