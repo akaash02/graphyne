@@ -8,6 +8,9 @@ data/
 # Binaries
 bin/
 
+# PGO profiles
+pgo/
+
 # VSCode
 .vscode/
 
