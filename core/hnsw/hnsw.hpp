@@ -55,6 +55,8 @@ public:
     {
     }
 
+    float *node_data() { return nodeBuffer.data(); }
+
     void addNode(int newId);
     void deleteNode(int id);
     std::vector<int> searchANN(const std::vector<float> &query, int k, int ef);

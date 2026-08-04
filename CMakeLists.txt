@@ -28,5 +28,6 @@ add_compile_options(
 
 # Subdirectories (each owns its CMakeLists.txt)
 add_subdirectory(core)
+add_subdirectory(start)
 add_subdirectory(tests)
 # add_subdirectory(api)   # uncomment when ready
