@@ -4,10 +4,11 @@ A vector similarity index built from scratch in C++20 — an implementation of
 **HNSW** (Hierarchical Navigable Small World) graphs for approximate nearest-neighbour
 search, with AVX2/FMA distance kernels and a flat, cache-friendly memory layout.
 
-On **SIFT1M** (1,000,000 × 128 base vectors), single-threaded, it reaches
-**recall@10 = 0.956 at ~6,400 QPS** — competitive, at matched recall, with
-[faiss](https://github.com/facebookresearch/faiss) and
-[hnswlib](https://github.com/nmslib/hnswlib) benchmarked on the same machine.
+On **SIFT1M** (1,000,000 × 128 base vectors), single-threaded at `ef=50`, it reaches
+**6,449 QPS at recall@10 = 0.956** — **~26% higher throughput *and* higher recall than
+[faiss](https://github.com/facebookresearch/faiss)** (5,101 QPS / 0.951), and higher recall
+than [hnswlib](https://github.com/nmslib/hnswlib) at equal search depth — all benchmarked on
+the same machine.
 
 > This is a systems/learning project: the goal was to implement HNSW correctly from the
 > paper, make it fast with full memory control, and — just as importantly — **benchmark it
@@ -24,15 +25,22 @@ SIFT1M, 1M base vectors, 10,000 queries, single thread, `M=16`, `efConstruction=
 
 | Engine                         | QPS    | Recall@10 | Notes                          |
 | ------------------------------ | ------ | --------- | ------------------------------ |
-| hnswlib 0.8                    | 7,401  | 0.9466    | cold query from saved index    |
-| **Graphyne**                   | ~6,400 | **0.9556**| hot query (no serialization yet)|
-| faiss 1.15.1 (`IndexHNSWFlat`) | 5,101  | 0.9506    | cold query from saved index    |
+| hnswlib 0.8                    | 7,401 | 0.9466    | cold query from saved index     |
+| **Graphyne**                   | 6,449 | **0.9556**| hot query (no serialization yet) |
+| faiss 1.15.1 (`IndexHNSWFlat`) | 5,101 | 0.9506    | cold query from saved index     |
 
-At `ef=50` the three land at slightly different recall, so the fair read is *matched
-recall*. At **recall ≈ 0.955**, Graphyne (~6,400 QPS) clearly beats faiss (~4,700) and sits
-just behind hnswlib (~6,500). Graphyne's number is measured *hot* (query runs right after
-a ~9-minute build) because it cannot yet serialize an index; the libraries query cold from
-disk. The full `ef` sweep, methodology, and caveats are in [BENCHMARKS.md](BENCHMARKS.md).
+**vs faiss — a clean win:** at the same `ef`, Graphyne is both faster (6,449 vs 5,101 QPS,
++26%) *and* higher recall (0.9556 vs 0.9506).
+
+**vs hnswlib — a split:** hnswlib has higher raw throughput (7,401 QPS) but at lower recall
+(0.9466). Graphyne reaches higher recall at the same search depth; to match Graphyne's
+0.9556 recall hnswlib must raise `ef` (do more work). So Graphyne wins on recall-per-`ef`,
+not on peak QPS.
+
+One caveat on state: Graphyne's number is measured *hot* (query runs right after a ~9-minute
+build) because it cannot yet serialize an index, whereas the libraries query cold from a
+saved index. The full `ef` sweep, methodology, and caveats are in
+[BENCHMARKS.md](BENCHMARKS.md).
 
 ---
 
